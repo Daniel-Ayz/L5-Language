@@ -51,8 +51,8 @@ export type AtomicTExp = NumTExp | BoolTExp | StrTExp | VoidTExp;
 export const isAtomicTExp = (x: any): x is AtomicTExp =>
     isNumTExp(x) || isBoolTExp(x) || isStrTExp(x) || isVoidTExp(x);
 
-export type CompoundTExp = ProcTExp | TupleTExp;
-export const isCompoundTExp = (x: any): x is CompoundTExp => isProcTExp(x) || isTupleTExp(x);
+export type CompoundTExp = ProcTExp | TupleTExp | UnionTExp;
+export const isCompoundTExp = (x: any): x is CompoundTExp => isProcTExp(x) || isTupleTExp(x) || isUnionTExp(x);
 
 export type NonTupleTExp = AtomicTExp | ProcTExp | TVar;
 export const isNonTupleTExp = (x: any): x is NonTupleTExp =>
@@ -73,6 +73,12 @@ export const isStrTExp = (x: any): x is StrTExp => x.tag === "StrTExp";
 export type VoidTExp = { tag: "VoidTExp" };
 export const makeVoidTExp = (): VoidTExp => ({tag: "VoidTExp"});
 export const isVoidTExp = (x: any): x is VoidTExp => x.tag === "VoidTExp";
+
+//added UnionTExp
+export type UnionTExp = { tag: "UnionTExp"; TEs: TExp[]};
+export const makeUnionTExp = (TEs: TExp[]): UnionTExp =>
+    ({tag: "UnionTExp", TEs: TEs});
+export const isUnionTExp = (x: any): x is UnionTExp => x.tag === "UnionTExp";
 
 // proc-te(param-tes: list(te), return-te: te)
 export type ProcTExp = { tag: "ProcTExp"; paramTEs: TExp[]; returnTE: TExp; };
@@ -169,10 +175,12 @@ export const parseTExp = (texp: Sexp): Result<TExp> =>
 ;; expected exactly one -> in the list
 ;; We do not accept (a -> b -> c) - must parenthesize
 */
-const parseCompoundTExp = (texps: Sexp[]): Result<ProcTExp> => {
+const parseCompoundTExp = (texps: Sexp[]): Result<ProcTExp | UnionTExp> => {
     const pos = texps.indexOf('->');
-    return (pos === -1)  ? makeFailure(`Procedure type expression without -> - ${format(texps)}`) :
-           (pos === 0) ? makeFailure(`No param types in proc texp - ${format(texps)}`) :
+    if(pos === -1){
+        bind(parseTExp(texps[1]),(x:TExp)=> makeUnionTExp([x,parseCompoundTExp(texps.slice(1)])));
+    }
+    return (pos === 0) ? makeFailure(`No param types in proc texp - ${format(texps)}`) :
            (pos === texps.length - 1) ? makeFailure(`No return type in proc texp - ${format(texps)}`) :
            (texps.slice(pos + 1).indexOf('->') > -1) ? makeFailure(`Only one -> allowed in a procexp - ${format(texps)}`) :
            bind(parseTupleTExp(texps.slice(0, pos)), (args: TExp[]) =>
@@ -194,7 +202,7 @@ const parseTupleTExp = (texps: Sexp[]): Result<TExp[]> => {
         texps[1] !== '*' ? makeFailure(`Parameters of procedure type must be separated by '*': ${format(texps)}`) :
         mapv(splitEvenOdds(texps.slice(2)), (sexps: Sexp[]) => [texps[0], ...sexps]);
 
-    return isEmptyTuple(texps) ? makeOk([]) : bind(splitEvenOdds(texps), (argTEs: Sexp[]) => 
+    return isEmptyTuple(texps) ? makeOk([]) : bind(splitEvenOdds(texps), (argTEs: Sexp[]) =>
                                                     mapResult(parseTExp, argTEs));
 }
 
@@ -209,6 +217,7 @@ export const unparseTExp = (te: TExp): Result<string> => {
                 cons(paramTE, chain(te => ['*', te], paramTEs)))) :
         makeOk(["Empty"]);
 
+
     const up = (x?: TExp): Result<string | string[]> =>
         isNumTExp(x) ? makeOk('number') :
         isBoolTExp(x) ? makeOk('boolean') :
@@ -216,6 +225,8 @@ export const unparseTExp = (te: TExp): Result<string> => {
         isVoidTExp(x) ? makeOk('void') :
         isEmptyTVar(x) ? makeOk(x.var) :
         isTVar(x) ? up(tvarContents(x)) :
+        //probably wrong, look at what they said in task 3.2.1
+        isUnionTExp(x) ?
         isProcTExp(x) ? bind(unparseTuple(x.paramTEs), (paramTEs: string[]) =>
                             mapv(unparseTExp(x.returnTE), (returnTE: string) =>
                                 [...paramTEs, '->', returnTE])) :
@@ -231,6 +242,15 @@ export const unparseTExp = (te: TExp): Result<string> => {
                                           x);
 }
 
+// export const unparseUnion = (TEs: TExp[]): Result<string[]> =>
+// {
+//     alphabeticalOrder(TEs);
+// }
+export const alphabeticalOrder = (TEs:TExp[]): TExp[] =>
+{
+    TEs.sort((a, b) => a.tag.localeCompare(b.tag))
+    return TEs;
+}
 // No need to change this for Union
 // ============================================================
 // equivalentTEs: 2 TEs are equivalent up to variable renaming.
@@ -284,8 +304,8 @@ const matchTVarsInTEs = <T1, T2>(te1: TExp[], te2: TExp[],
     // Match first then continue on rest
     isNonEmptyList<TExp>(te1) && isNonEmptyList<TExp>(te2) ?
         matchTVarsInTE(first(te1), first(te2),
-                        (subFirst) => matchTVarsInTEs(rest(te1), rest(te2), 
-                                        (subRest) => succ(concat(subFirst, subRest)), 
+                        (subFirst) => matchTVarsInTEs(rest(te1), rest(te2),
+                                        (subRest) => succ(concat(subFirst, subRest)),
                                         fail),
                         fail) :
     (isEmpty(te1) && isEmpty(te2)) ? succ([]) :
