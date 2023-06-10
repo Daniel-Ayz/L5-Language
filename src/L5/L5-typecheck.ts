@@ -264,25 +264,25 @@ export const typeofLetrec = (exp: LetrecExp, tenv: TEnv): Result<TExp> => {
 // Purpose: compute the type of a define
 // Typing rule:
 //   (define (var : texp) val)
-// TODO L51 - write the true definition
+//   tenv-val = extend-tenv(var:texp; tenv)
+// If   type<val>(tenv-val) = texp
+// then type<(define (var : texp) val)>(tenv) = void
 export const typeofDefine = (exp: DefineExp, tenv: TEnv): Result<VoidTExp> =>{
     const vars = [exp.var.var];
     const vals = [exp.val];
     const varTEs = [exp.var.texp];
-    const constraints = zipWithResult((varTE, val) => bind(typeofExp(val, tenv), (typeOfVal: TExp) =>
+    const tenvVal = makeExtendTEnv(vars, varTEs, tenv);
+    const constraints = zipWithResult((varTE, val) => bind(typeofExp(val, tenvVal), (typeOfVal: TExp) =>
             checkCompatibleType(typeOfVal, varTE, exp)),
         varTEs, vals);
-    // return bind(constraints, _ => typeofExps(exp.body, makeExtendTEnv(vars, varTEs, tenv)));
-    // TODO: how the define type is kept in the system?
-    return bind(constraints, () => makeOk(makeVoidTExp()));
+    return bind(constraints, (_) => makeOk(makeVoidTExp()));
+
 }
 
 
 // Purpose: compute the type of a program
 // Typing rule:
-// TODO - write the true definition
+
 export const typeofProgram = (exp: Program, tenv: TEnv): Result<TExp> =>{
-    const expressions = map((exp) => typeofExp(exp, tenv), exp.exps);
-    const last = expressions[expressions.length-1];
-    return last;
+    return typeofExps(exp.exps, tenv);
 }
