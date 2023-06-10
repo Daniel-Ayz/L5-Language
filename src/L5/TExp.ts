@@ -177,8 +177,11 @@ export const parseTExp = (texp: Sexp): Result<TExp> =>
 */
 const parseCompoundTExp = (texps: Sexp[]): Result<ProcTExp | UnionTExp> => {
     const pos = texps.indexOf('->');
-    if(pos === -1){
-        bind(parseTExp(texps[1]),(x:TExp)=> makeUnionTExp([x,parseCompoundTExp(texps.slice(1)])));
+    if(pos === -1) {
+        if (texps.length < 3 || texps[0] !== "union") {
+            return makeFailure(`Invalid union type expression: ${format(texps)}`);
+        }
+        return parseUnionTExp(texps);
     }
     return (pos === 0) ? makeFailure(`No param types in proc texp - ${format(texps)}`) :
            (pos === texps.length - 1) ? makeFailure(`No return type in proc texp - ${format(texps)}`) :
@@ -187,6 +190,25 @@ const parseCompoundTExp = (texps: Sexp[]): Result<ProcTExp | UnionTExp> => {
                mapv(parseTExp(texps[pos + 1]), (returnTE: TExp) =>
                     makeProcTExp(args, returnTE)));
 };
+
+const parseUnionTExp = (sexp: Sexp[]): Result<UnionTExp> => {
+    const elements = sexp.slice(1); // Exclude the 'union' keyword
+    const parseElements = (exprs: Sexp[]): Result<TExp[]> =>
+        exprs.length === 0
+            ? makeOk([])
+            : bind(parseTExp(exprs[0]), (parsedTE: TExp) =>
+                bind(parseElements(exprs.slice(1)), (parsedRest: TExp[]) =>
+                    makeOk([parsedTE, ...parsedRest])
+                )
+            );
+    return bind(parseElements(elements), (parsedTEs: TExp[]) => {
+        const sortedTEs = parsedTEs.slice().sort((a, b) =>
+            unparseTExp(a).tag.localeCompare(unparseTExp(b).tag)
+        );
+        return makeOk(makeUnionTExp(sortedTEs));
+    });
+};
+
 
 /*
 ;; Expected structure: <te1> [* <te2> ... * <ten>]?
@@ -226,7 +248,7 @@ export const unparseTExp = (te: TExp): Result<string> => {
         isEmptyTVar(x) ? makeOk(x.var) :
         isTVar(x) ? up(tvarContents(x)) :
         //probably wrong, look at what they said in task 3.2.1
-        isUnionTExp(x) ?
+        isUnionTExp(x) ? :
         isProcTExp(x) ? bind(unparseTuple(x.paramTEs), (paramTEs: string[]) =>
                             mapv(unparseTExp(x.returnTE), (returnTE: string) =>
                                 [...paramTEs, '->', returnTE])) :
@@ -241,6 +263,8 @@ export const unparseTExp = (te: TExp): Result<string> => {
                                           isArray(x) ? `(${x.join(' ')})` :
                                           x);
 }
+
+
 
 // export const unparseUnion = (TEs: TExp[]): Result<string[]> =>
 // {

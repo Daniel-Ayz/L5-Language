@@ -6,11 +6,13 @@ import { isAppExp, isBoolExp, isDefineExp, isIfExp, isLetrecExp, isLetExp, isNum
          AppExp, BoolExp, DefineExp, Exp, IfExp, LetrecExp, LetExp, NumExp,
          Parsed, PrimOp, ProcExp, Program, StrExp } from "./L5-ast";
 import { applyTEnv, makeEmptyTEnv, makeExtendTEnv, TEnv } from "./TEnv";
-import { isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeStrTExp, makeVoidTExp,
-         parseTE, unparseTExp,
-         BoolTExp, NumTExp, StrTExp, TExp, VoidTExp } from "./TExp";
+import {
+    isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeStrTExp, makeVoidTExp,
+    parseTE, unparseTExp,
+    BoolTExp, NumTExp, StrTExp, TExp, VoidTExp, isUnionTExp, makeUnionTExp
+} from "./TExp";
 import { isEmpty, allT, first, rest, NonEmptyList, List, isNonEmptyList } from '../shared/list';
-import { Result, makeFailure, bind, makeOk, zipWithResult } from '../shared/result';
+import {Result, makeFailure, bind, makeOk, zipWithResult, isOk} from '../shared/result';
 import { parse as p } from "../shared/parser";
 import { format } from '../shared/format';
 
@@ -19,12 +21,47 @@ import { format } from '../shared/format';
 // as part of a fully-annotated type check process of exp.
 // Return an error if te1 is not compatible with te2 - true otherwise.
 // Exp is only passed for documentation purposes.
-export const checkCompatibleType = (te1: TExp, te2: TExp, exp: Exp): Result<true> =>
-  equals(te1, te2) ? makeOk(true) :
-  bind(unparseTExp(te1), (te1: string) =>
-    bind(unparseTExp(te2), (te2: string) =>
-        bind(unparse(exp), (exp: string) => 
-            makeFailure<true>(`Incompatible types: ${te1} and ${te2} in ${exp}`))));
+export const checkCompatibleType = (te1: TExp, te2: TExp, exp: Exp): Result<true> => {
+    if(isProcTExp(te1) && isProcTExp(te2))
+    {
+        if(te1.paramTEs.length === te2.paramTEs.length) {
+            if(isOk(checkCompatibleType(te1.returnTE,te2.returnTE,exp))){
+                te1.paramTEs.every((element, index) => {
+                    if (!isOk(checkCompatibleType(te2.paramTEs[index], element, exp))) {
+                        return makeFailure<true>("Incompatible types");
+                    }
+                });
+                return makeOk(true);
+            }
+        }
+        return makeFailure<true>("Incompatible types");
+    }
+    if (isUnionTExp(te2)) {
+        if (isUnionTExp(te1)) {
+            // Check if every component of te1 is compatible with at least one component of te2
+            const compatibleComponents = te1.TEs.every((param) =>
+                te2.TEs.some((otherParam) => isOk(checkCompatibleType(param, otherParam, exp)))
+            );
+            if (compatibleComponents) {
+                return makeOk(true);
+            }
+            return makeFailure<true>("Incompatible types");
+        } else {
+            // Check if te1 is compatible with at least one component of te2
+            const compatibleComponent = te2.TEs.some((param) => isOk(checkCompatibleType(te1, param, exp)));
+            if (compatibleComponent) {
+                return makeOk(true);
+            }
+        }
+    }
+    if(equals(te1,te2))
+        return makeOk(true);
+
+    return bind(unparseTExp(te1), (te1: string) =>
+        bind(unparseTExp(te2), (te2: string) =>
+            bind(unparse(exp), (exp: string) =>
+                makeFailure<true>(`Incompatible types: ${te1} and ${te2} in ${exp}`))));
+}
 
 // Compute the type of L5 AST exps to TE
 // ===============================================
@@ -107,7 +144,7 @@ export const typeofPrim = (p: PrimOp): Result<TExp> =>
 // TODO L51
 export const makeUnion = (te1: TExp, te2: TExp): TExp =>
     // Replace return type and body with appropriate code.
-    makeStrTExp();
+    makeUnionTExp([te1,te2]);
 
 // TODO L51
 // Purpose: compute the type of an if-exp
@@ -120,13 +157,22 @@ export const typeofIf = (ifExp: IfExp, tenv: TEnv): Result<TExp> => {
     const testTE = typeofExp(ifExp.test, tenv);
     const thenTE = typeofExp(ifExp.then, tenv);
     const altTE = typeofExp(ifExp.alt, tenv);
-    const constraint1 = bind(testTE, testTE => checkCompatibleType(testTE, makeBoolTExp(), ifExp));
-    const constraint2 = bind(thenTE, (thenTE: TExp) =>
-                            bind(altTE, (altTE: TExp) =>
-                                checkCompatibleType(thenTE, altTE, ifExp)));
+
+    const constraint1 = bind(testTE, (testTE: TExp) =>
+        checkCompatibleType(testTE, makeBoolTExp(), ifExp)
+    );
     return bind(constraint1, (_c1: true) =>
-                bind(constraint2, (_c2: true) =>
-                    thenTE));
+        bind(thenTE, (thenTE: TExp) =>
+            bind(altTE, (altTE: TExp) => {
+                if (equals(thenTE, altTE)) {
+                    return makeOk(thenTE);
+                } else {
+                    const unionTE = makeUnion(thenTE, altTE);
+                    return makeOk(unionTE);
+                }
+            })
+        )
+    );
 };
 
 // Purpose: compute the type of a proc-exp
