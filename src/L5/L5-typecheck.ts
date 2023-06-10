@@ -9,7 +9,7 @@ import { applyTEnv, makeEmptyTEnv, makeExtendTEnv, TEnv } from "./TEnv";
 import {
     isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeStrTExp, makeVoidTExp,
     parseTE, unparseTExp,
-    BoolTExp, NumTExp, StrTExp, TExp, VoidTExp, isUnionTExp, makeUnionTExp
+    BoolTExp, NumTExp, StrTExp, TExp, VoidTExp, isUnionTExp, makeUnionTExp, UnionTExp
 } from "./TExp";
 import { isEmpty, allT, first, rest, NonEmptyList, List, isNonEmptyList } from '../shared/list';
 import {Result, makeFailure, bind, makeOk, zipWithResult, isOk} from '../shared/result';
@@ -142,9 +142,10 @@ export const typeofPrim = (p: PrimOp): Result<TExp> =>
     makeFailure(`Primitive not yet implemented: ${p.op}`);
 
 // TODO L51
-export const makeUnion = (te1: TExp, te2: TExp): TExp =>
+export const makeUnion = (te1: TExp, te2: TExp): UnionTExp => {
     // Replace return type and body with appropriate code.
-    makeUnionTExp([te1,te2]);
+    return makeUnionTExp([te1, te2]);
+}
 
 // TODO L51
 // Purpose: compute the type of an if-exp

@@ -4,10 +4,12 @@ import { isNumExp, isBoolExp, isVarRef, isPrimOp, isProgram, isDefineExp, isVarD
 import { Result, bind, mapv, isOkT, makeOk, isFailure } from "../src/shared/result";
 import { parse as parseSexp } from "../src/shared/parser";
 import { first, second } from "../src/shared/list";
-import { isProcTExp, parseTE } from "../src/L5/TExp";
+import {isProcTExp, parseTE, parseTExp, TExp, unparseTExp} from "../src/L5/TExp";
+import exp from "constants";
 
 const p = (x: string): Result<Exp> => bind(parseSexp(x), (p) => parseL5Exp(p));
-
+const p2 = (x: string): Result<TExp> => bind(parseSexp(x), (p) => parseTExp(p));
+const roundTrip2 = (x: string): Result<string> =>  bind(p2(x), unparseTExp);
 describe('L5 Parser', () => {
     it('parses atomic expressions', () => {
         expect(p("1")).toSatisfy(isOkT(isNumExp));
@@ -166,5 +168,9 @@ describe('L5 Unparse', () => {
 
     it('unparses union, nested unions in different positions', () => {
         // TODO
+        expect(roundTrip2("(union number boolean)")).toEqual(makeOk("(union boolean number)"));
+        expect(roundTrip2("(union number (union number boolean))")).toEqual(makeOk("(union boolean number)"));
+        expect(roundTrip2("(union (union number boolean) string)")).toEqual(makeOk("(union boolean (union number string))"));
+        expect(roundTrip2("(union number (union boolean (union string number)))")).toEqual(makeOk("(union boolean (union number string))"));
     })
 });

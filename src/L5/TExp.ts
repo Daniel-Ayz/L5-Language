@@ -33,9 +33,9 @@
 ;; [Empty -> [union boolean number]]
 ;; [union [T1 -> T1] [Empty -> T1]]
 */
-import { chain, concat, map, uniq } from "ramda";
+import {chain, concat, flatten, map, reduce, uniq} from "ramda";
 import { Sexp } from "s-expression";
-import { isEmpty, isNonEmptyList } from "../shared/list";
+import {isEmpty, isNonEmptyList, List} from "../shared/list";
 import { isArray, isBoolean, isString } from '../shared/type-predicates';
 import { makeBox, setBox, unbox, Box } from '../shared/box';
 import { cons, first, rest } from '../shared/list';
@@ -76,8 +76,12 @@ export const isVoidTExp = (x: any): x is VoidTExp => x.tag === "VoidTExp";
 
 //added UnionTExp
 export type UnionTExp = { tag: "UnionTExp"; TEs: TExp[]};
-export const makeUnionTExp = (TEs: TExp[]): UnionTExp =>
-    ({tag: "UnionTExp", TEs: TEs});
+export const makeUnionTExp = (TEs: TExp[]): UnionTExp => {
+    let flatTexp = flatten(map((te: TExp) => isUnionTExp(te) ? te.TEs : [te], TEs));
+    //remove duplicate from texps
+    flatTexp = flatTexp.filter((te, index) => flatTexp.findIndex((te2) => te.tag === te2.tag) === index);
+    return {tag: "UnionTExp", TEs: flatTexp};
+}
 export const isUnionTExp = (x: any): x is UnionTExp => x.tag === "UnionTExp";
 
 // proc-te(param-tes: list(te), return-te: te)
@@ -160,14 +164,15 @@ export const parseTE = (t: string): Result<TExp> =>
 ;; parseTExp('(T * T -> boolean)') => '(proc-te ((tvar T) (tvar T)) bool-te)
 ;; parseTExp('(number -> (number -> number)') => '(proc-te (num-te) (proc-te (num-te) num-te))
 */
-export const parseTExp = (texp: Sexp): Result<TExp> =>
-    (texp === "number") ? makeOk(makeNumTExp()) :
+export const parseTExp = (texp: Sexp): Result<TExp> =>{
+    return (texp === "number") ? makeOk(makeNumTExp()) :
     (texp === "boolean") ? makeOk(makeBoolTExp()) :
     (texp === "void") ? makeOk(makeVoidTExp()) :
     (texp === "string") ? makeOk(makeStrTExp()) :
     isString(texp) ? makeOk(makeTVar(texp)) :
     isArray(texp) ? parseCompoundTExp(texp) :
     makeFailure(`Unexpected TExp - ${format(texp)}`);
+}
 
 // TODO L51: Support parsing of union types
 /*
@@ -177,11 +182,14 @@ export const parseTExp = (texp: Sexp): Result<TExp> =>
 */
 const parseCompoundTExp = (texps: Sexp[]): Result<ProcTExp | UnionTExp> => {
     const pos = texps.indexOf('->');
-    if(pos === -1) {
-        if (texps.length < 3 || texps[0] !== "union") {
+    if(texps[0] === 'union') {
+        if (texps.length < 3) {
             return makeFailure(`Invalid union type expression: ${format(texps)}`);
         }
         return parseUnionTExp(texps);
+    }
+    if(pos === -1) {
+        return makeFailure(`Invalid union type expression: ${format(texps)}`);
     }
     return (pos === 0) ? makeFailure(`No param types in proc texp - ${format(texps)}`) :
            (pos === texps.length - 1) ? makeFailure(`No return type in proc texp - ${format(texps)}`) :
@@ -193,22 +201,19 @@ const parseCompoundTExp = (texps: Sexp[]): Result<ProcTExp | UnionTExp> => {
 
 const parseUnionTExp = (sexp: Sexp[]): Result<UnionTExp> => {
     const elements = sexp.slice(1); // Exclude the 'union' keyword
-    const parseElements = (exprs: Sexp[]): Result<TExp[]> =>
-        exprs.length === 0
-            ? makeOk([])
-            : bind(parseTExp(exprs[0]), (parsedTE: TExp) =>
-                bind(parseElements(exprs.slice(1)), (parsedRest: TExp[]) =>
-                    makeOk([parsedTE, ...parsedRest])
-                )
-            );
-    return bind(parseElements(elements), (parsedTEs: TExp[]) => {
-        const sortedTEs = parsedTEs.slice().sort((a, b) =>
-            unparseTExp(a).tag.localeCompare(unparseTExp(b).tag)
-        );
-        return makeOk(makeUnionTExp(sortedTEs));
-    });
+    return bind(parseTExp(elements[0]),(te1:TExp) =>bind(parseTExp(elements[1]),(te2)=> makeOk(makeUnionTExp([te1,te2]))));
 };
 
+// const flatUnion = (texp:UnionTExp): UnionTExp => {
+//     reduce((current:UnionTExp,acc:List<TExp>)=> {
+//         acc.push(flat(flatUnion(current)));
+//         return acc;
+//     },[],texp);
+// }
+//
+// const flat=(texp:TExp[]):TExp[] =>{
+//     reduce()
+// }
 
 /*
 ;; Expected structure: <te1> [* <te2> ... * <ten>]?
@@ -240,22 +245,23 @@ export const unparseTExp = (te: TExp): Result<string> => {
         makeOk(["Empty"]);
 
 
-    const up = (x?: TExp): Result<string | string[]> =>
-        isNumTExp(x) ? makeOk('number') :
-        isBoolTExp(x) ? makeOk('boolean') :
-        isStrTExp(x) ? makeOk('string') :
-        isVoidTExp(x) ? makeOk('void') :
-        isEmptyTVar(x) ? makeOk(x.var) :
-        isTVar(x) ? up(tvarContents(x)) :
-        //probably wrong, look at what they said in task 3.2.1
-        isUnionTExp(x) ? :
-        isProcTExp(x) ? bind(unparseTuple(x.paramTEs), (paramTEs: string[]) =>
-                            mapv(unparseTExp(x.returnTE), (returnTE: string) =>
-                                [...paramTEs, '->', returnTE])) :
-        isEmptyTupleTExp(x) ? makeOk("Empty") :
-        isNonEmptyTupleTExp(x) ? unparseTuple(x.TEs) :
-        x === undefined ? makeFailure("Undefined TVar") :
-        x;
+    const up = (x?: TExp): Result<string | string[]> => {
+        return isNumTExp(x) ? makeOk('number') :
+            isBoolTExp(x) ? makeOk('boolean') :
+                isStrTExp(x) ? makeOk('string') :
+                    isVoidTExp(x) ? makeOk('void') :
+                        isEmptyTVar(x) ? makeOk(x.var) :
+                            isTVar(x) ? up(tvarContents(x)) :
+                                isUnionTExp(x) ? unparseUnion(x) :
+                                    isProcTExp(x) ? bind(unparseTuple(x.paramTEs), (paramTEs: string[]) =>
+                                            mapv(unparseTExp(x.returnTE), (returnTE: string) =>
+                                                [...paramTEs, '->', returnTE])) :
+                                        isEmptyTupleTExp(x) ? makeOk("Empty") :
+                                            isNonEmptyTupleTExp(x) ? unparseTuple(x.TEs) :
+                                                x === undefined ? makeFailure("Undefined TVar") :
+                                                    x;
+    }
+
 
     const unparsed = up(te);
     return mapv(unparsed,
@@ -264,7 +270,24 @@ export const unparseTExp = (te: TExp): Result<string> => {
                                           x);
 }
 
+const unparseUnion = (x: UnionTExp): Result<string[]> =>{
+    return bind(makeOk(console.log(x)), () => bind(mapResult(unparseTExp, x.TEs), (texp) => addUnionString(texp)));
+}
 
+const addUnionString = (texp: string[]):Result<string[]> =>{
+    texp.sort();
+    let close = "";
+    for(let i = 0; i<texp.length; i+=2){
+        if(i<texp.length-1){
+            texp.splice(i,0,"(union");
+            close+=")";
+        }
+    }
+    texp[texp.length-1]+=close;
+    texp[0]= texp[0].slice(1);
+    texp[texp.length-1]= texp[texp.length-1].slice(0,texp[texp.length-1].length-1);
+    return makeOk(texp);
+}
 
 // export const unparseUnion = (TEs: TExp[]): Result<string[]> =>
 // {
@@ -341,9 +364,7 @@ const matchTVarsInTEs = <T1, T2>(te1: TExp[], te2: TExp[],
 // Example:  equivalentTEs(parseTExp('(T1 * (Number -> T2) -> T3))',
 //                         parseTExp('(T4 * (Number -> T5) -> T6))') => #t
 export const equivalentTEs = (te1: TExp, te2: TExp): boolean => {
-    // console.log(`EqTEs ${format(te1)} - ${format(te2)}`);
     const tvarsPairs = matchTVarsInTE(te1, te2, (x) => x, () => false);
-    // console.log(`EqTEs pairs = ${map(JSON.stringify, tvarsPairs)}`)
     if (isBoolean(tvarsPairs))
         return false;
     else {
