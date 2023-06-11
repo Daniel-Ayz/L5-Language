@@ -4,7 +4,7 @@ import { isNumExp, isBoolExp, isVarRef, isPrimOp, isProgram, isDefineExp, isVarD
 import { Result, bind, mapv, isOkT, makeOk, isFailure } from "../src/shared/result";
 import { parse as parseSexp } from "../src/shared/parser";
 import { first, second } from "../src/shared/list";
-import {isProcTExp, parseTE, parseTExp, TExp, unparseTExp} from "../src/L5/TExp";
+import {isProcTExp, isUnionTExp, parseTE, parseTExp, TExp, unparseTExp} from "../src/L5/TExp";
 import exp from "constants";
 
 const p = (x: string): Result<Exp> => bind(parseSexp(x), (p) => parseL5Exp(p));
@@ -89,23 +89,37 @@ describe('L5 Parser', () => {
 
 describe('L5 parseTExp Union Parser', () => {
     it('parseTExp parses simple union expressions', () => {
-        // todo
+        expect(p2("(union number boolean)")).toSatisfy(isOkT(isUnionTExp));
+        // parse simple union expressions
+        expect(p2("(union string boolean)")).toSatisfy(isOkT(isUnionTExp));
+        expect(p2("(union boolean string)")).toSatisfy(isOkT(isUnionTExp));
     });
 
     it('parseTExp parses embedded union expressions', () => {
-        // todo
+        expect(p2("(union number (union boolean string))")).toSatisfy(isOkT(isUnionTExp));
+        expect(p2("(union (union boolean string) number)")).toSatisfy(isOkT(isUnionTExp));
+        expect(p2("(union (union boolean string) (union number boolean))")).toSatisfy(isOkT(isUnionTExp));
     });
 
     it('parseTExp parses union types in proc argument position', () => {
-        // todo
+        // parse union types in proc argument position
+        expect(p2("(number -> (union boolean string))")).toSatisfy(isOkT(isProcTExp));
+        expect(p2("((union boolean string) -> number)")).toSatisfy(isOkT(isProcTExp));
+        expect(p2("((union boolean string) -> (union number boolean))")).toSatisfy(isOkT(isProcTExp));
     });
 
     it('parseTExp parses union types in return type argument position', () => {
-        // todo
+        // parse union types in return type argument position
+        expect(p2("((union boolean string) -> (union number boolean))")).toSatisfy(isOkT(isProcTExp));
+        expect(p2("(number -> (union boolean string))")).toSatisfy(isOkT(isProcTExp));
+        expect(p2("(boolean -> (union boolean string))")).toSatisfy(isOkT(isProcTExp));
     });
 
     it('parseTExp fails to parse union of bad type expressions', () => {
-        // todo
+        // parse union of bad type expressions
+        expect(p2("(union number boolean string)")).toSatisfy(isFailure);
+        expect(p2("(union number 1)")).toSatisfy(isFailure);
+        expect(p2("(union number (number number boolean))")).toSatisfy(isFailure);
     });
 
 });

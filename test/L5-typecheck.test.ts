@@ -1,6 +1,6 @@
 import { isTypedArray } from 'util/types';
 import {isProgram, makeBoolExp, parseL5, Program} from '../src/L5/L5-ast';
-import {typeofProgram, L5typeof, checkCompatibleType, typeofIf} from '../src/L5/L5-typecheck';
+import {typeofProgram, L5typeof, checkCompatibleType, typeofIf, makeUnion} from '../src/L5/L5-typecheck';
 import { applyTEnv } from '../src/L5/TEnv';
 import {
     isNumTExp, isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeTVar,
@@ -148,13 +148,14 @@ describe('L5 Type Checker', () => {
     // TODO L51 Test makeUnion
     describe('L5 Test makeUnion', () => {
         // makeUnion( number, boolean) -> union((number, boolean))
-        expect(makeUnionTExp([makeNumTExp(), makeBoolTExp()])).toEqual(makeUnionTExp([makeNumTExp(), makeBoolTExp()]));
+        expect(makeUnion(makeNumTExp(), makeBoolTExp())).toEqual(makeUnionTExp([makeNumTExp(), makeBoolTExp()]));
+        //expect(makeUnion([makeNumTExp(), makeBoolTExp()])).toEqual(makeUnionTExp([makeNumTExp(), makeBoolTExp()]));
         // makeUnion( union(number, boolean), string) -> union(boolean, number, string)
-        expect(makeUnionTExp([makeUnionTExp([makeNumTExp(), makeBoolTExp()]), makeStrTExp()])).toEqual(makeUnionTExp([makeNumTExp(), makeBoolTExp(), makeStrTExp()]));
+        expect(makeUnion(makeUnion(makeNumTExp(), makeBoolTExp()), makeStrTExp())).toEqual(makeUnionTExp([makeNumTExp(), makeBoolTExp(), makeStrTExp()]));
         // makeUnion( union(number, boolean), union(boolean, string)) -> union(boolean, number, string)
-        expect(makeUnionTExp([makeUnionTExp([makeNumTExp(), makeBoolTExp()]), makeUnionTExp([makeBoolTExp(), makeStrTExp()])])).toEqual(makeUnionTExp([makeNumTExp(), makeBoolTExp(), makeStrTExp()]));
+        expect(makeUnion(makeUnion(makeNumTExp(), makeBoolTExp()), makeUnion(makeBoolTExp(), makeStrTExp()))).toEqual(makeUnionTExp([makeNumTExp(), makeBoolTExp(), makeStrTExp()]));
         // makeUnion( number, union(number, boolean)) -> union(boolean, number)
-        expect(makeUnionTExp([makeNumTExp(), makeUnionTExp([makeNumTExp(), makeBoolTExp()])])).toEqual(makeUnionTExp([makeNumTExp(), makeBoolTExp()]));
+        expect(makeUnion(makeNumTExp(), makeUnion(makeNumTExp(), makeBoolTExp()))).toEqual(makeUnionTExp([makeNumTExp(), makeBoolTExp()]));
     });
     
     // TODO L51 Test typeOfIf with union in all relevant positions

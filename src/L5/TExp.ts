@@ -33,7 +33,7 @@
 ;; [Empty -> [union boolean number]]
 ;; [union [T1 -> T1] [Empty -> T1]]
 */
-import {chain, concat, flatten, map, reduce, uniq} from "ramda";
+import {chain, composeWith, concat, flatten, map, reduce, uniq} from "ramda";
 import { Sexp } from "s-expression";
 import {isEmpty, isNonEmptyList, List} from "../shared/list";
 import { isArray, isBoolean, isString } from '../shared/type-predicates';
@@ -174,6 +174,15 @@ export const parseTExp = (texp: Sexp): Result<TExp> =>{
     makeFailure(`Unexpected TExp - ${format(texp)}`);
 }
 
+export const parseUTExp = (texp: Sexp): Result<TExp> =>{
+    return (texp === "number") ? makeOk(makeNumTExp()) :
+        (texp === "boolean") ? makeOk(makeBoolTExp()) :
+            (texp === "void") ? makeOk(makeVoidTExp()) :
+                (texp === "string") ? makeOk(makeStrTExp()) :
+                        isArray(texp) ? parseCompoundTExp(texp) :
+                            makeFailure(`Unexpected TExp - ${format(texp)}`);
+}
+
 // TODO L51: Support parsing of union types
 /*
 ;; expected structure: (<params> -> <returnte>)
@@ -201,7 +210,13 @@ const parseCompoundTExp = (texps: Sexp[]): Result<ProcTExp | UnionTExp> => {
 
 const parseUnionTExp = (sexp: Sexp[]): Result<UnionTExp> => {
     const elements = sexp.slice(1); // Exclude the 'union' keyword
-    return bind(parseTExp(elements[0]),(te1:TExp) =>bind(parseTExp(elements[1]),(te2)=> makeOk(makeUnionTExp([te1,te2]))));
+    return bind(parseUTExp(elements[0]),(te1:TExp) =>{
+        if(elements.length != 2){
+            return makeFailure("Union type can only have two elements");
+        }
+        return bind(parseUTExp(elements[1]),(te2)=> {
+            return makeOk(makeUnionTExp([te1, te2]));
+        })});
 };
 
 // const flatUnion = (texp:UnionTExp): UnionTExp => {

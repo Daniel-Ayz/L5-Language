@@ -276,8 +276,8 @@ export const typeofDefine = (exp: DefineExp, tenv: TEnv): Result<VoidTExp> =>{
     const constraints = zipWithResult((varTE, val) => bind(typeofExp(val, tenvVal), (typeOfVal: TExp) =>
             checkCompatibleType(typeOfVal, varTE, exp)),
         varTEs, vals);
+    tenv = makeExtendTEnv(vars, varTEs, tenv);
     return bind(constraints, (_) => makeOk(makeVoidTExp()));
-
 }
 
 
